@@ -71,6 +71,11 @@ public class MainCanvas extends JPanel implements Runnable{
 	// Cada triangulo possui tres Ponto3D, portanto X, Y e Z sao preservados.
 	ArrayList<Triangulo3D> universo = new ArrayList<Triangulo3D>();
 
+	// Eixo arbitrario de rotacao. Dois cliques com o botao direito
+	// definem os pontos A e B da reta no espaco 3D.
+	Ponto3D eixoA = null;
+	Ponto3D eixoB = null;
+
 	
 	public MainCanvas() {
 		
@@ -204,6 +209,29 @@ public class MainCanvas extends JPanel implements Runnable{
 				if(key == KeyEvent.VK_E) {
 					transformaUniversoAoRedorDoCentro(Matriz4x4.rotacaoZ((float)(-Math.PI / 18)));
 				}
+
+				// U/O: gira todo o universo em torno da reta delimitada por eixoA e eixoB.
+				if(key == KeyEvent.VK_U) {
+					rotacionaUniversoNoEixo((float)(Math.PI / 18));
+				}
+				if(key == KeyEvent.VK_O) {
+					rotacionaUniversoNoEixo((float)(-Math.PI / 18));
+				}
+
+				// Como a tela e 2D, o clique fornece X e Y. Estas teclas permitem
+				// inclinar o eixo no espaco alterando tambem o Z dos dois pontos.
+				if(key == KeyEvent.VK_1 && eixoA != null) {
+					eixoA.Z -= 10.0f;
+				}
+				if(key == KeyEvent.VK_2 && eixoA != null) {
+					eixoA.Z += 10.0f;
+				}
+				if(key == KeyEvent.VK_3 && eixoB != null) {
+					eixoB.Z -= 10.0f;
+				}
+				if(key == KeyEvent.VK_4 && eixoB != null) {
+					eixoB.Z += 10.0f;
+				}
 			}
 		});		
 		
@@ -223,6 +251,20 @@ public class MainCanvas extends JPanel implements Runnable{
 				// centrado na posicao do mouse. Nao existe mais criacao de Linha2D.
 				if(e.getButton() == MouseEvent.BUTTON1) {
 					adicionaTriangulo(clickX, clickY);
+				}
+
+				// Dois cliques com o botao direito definem o eixo de rotacao.
+				// Como o mouse esta numa tela 2D, inicialmente Z = 0.
+				// Depois e possivel alterar os Z com as teclas 1,2,3,4.
+				if(e.getButton() == MouseEvent.BUTTON3) {
+					if(eixoA == null || eixoB != null) {
+						eixoA = new Ponto3D(clickX, clickY, 0.0f);
+						eixoB = null;
+						System.out.println("Primeiro ponto do eixo: " + eixoA);
+					} else {
+						eixoB = new Ponto3D(clickX, clickY, 0.0f);
+						System.out.println("Segundo ponto do eixo: " + eixoB);
+					}
 				}
 
 				requestFocusInWindow();
@@ -315,6 +357,16 @@ public class MainCanvas extends JPanel implements Runnable{
 		for(int i = 0; i < universo.size(); i++) {
 			desenhaTriangulo3D(universo.get(i), 0, 70, 220);
 		}
+
+		// Mostra o eixo arbitrario diretamente no buffer. A projecao na tela
+		// usa X/Y, enquanto o Z dos pontos continua existindo para o calculo 3D.
+		if(eixoA != null) {
+			desenhaMarcador(eixoA, 220, 0, 0);
+		}
+		if(eixoA != null && eixoB != null) {
+			desenhaLinha((int)eixoA.X, (int)eixoA.Y, (int)eixoB.X, (int)eixoB.Y, 220, 0, 0);
+			desenhaMarcador(eixoB, 220, 0, 0);
+		}
 		
 		g.setFont(f);
 		
@@ -336,8 +388,13 @@ public class MainCanvas extends JPanel implements Runnable{
 		g.setColor(Color.black);
 		g.drawString("FPS "+fps+" mouse: "+mouseX+","+mouseY, 10, 25);
 		g.setFont(new Font("", Font.PLAIN, 14));
-		g.drawString("Triangulos no universo: " + universo.size() + " | Clique esquerdo: adicionar triangulo", 10, 48);
-		g.drawString("WASD: mover universo XY | R/F: mover Z | Z/X: escala | I/K: rot X | J/L: rot Y | Q/E: rot Z", 10, 68);
+		g.drawString("Triangulos: " + universo.size() + " | Clique esquerdo: adicionar | 2 cliques direitos: definir eixo", 10, 48);
+		g.drawString("U/O: girar no eixo arbitrario | 1/2: Z do ponto A | 3/4: Z do ponto B", 10, 68);
+		g.drawString("WASD: mover | R/F: Z | Z/X: escala | I/K, J/L, Q/E: rotacoes X/Y/Z", 10, 88);
+
+		if(eixoA != null) {
+			g.drawString("Eixo A=" + eixoA + (eixoB != null ? "  B=" + eixoB : "  (aguardando B)"), 10, 108);
+		}
 	}
 	
 	/**
@@ -417,6 +474,38 @@ public class MainCanvas extends JPanel implements Runnable{
 			.multiplicar(paraOrigem);
 
 		transformaUniverso(matrizFinal);
+	}
+
+	/**
+	 * Gira TODO o universo em torno da reta 3D delimitada pelos dois pontos
+	 * escolhidos. A propria Matriz4x4 monta T(A) * R * T(-A).
+	 */
+	private void rotacionaUniversoNoEixo(float angulo) {
+		if(eixoA == null || eixoB == null) {
+			System.out.println("Defina primeiro os dois pontos do eixo com o botao direito.");
+			return;
+		}
+
+		float dx = eixoB.X - eixoA.X;
+		float dy = eixoB.Y - eixoA.Y;
+		float dz = eixoB.Z - eixoA.Z;
+		float comprimento2 = dx * dx + dy * dy + dz * dz;
+
+		if(comprimento2 < 0.000001f) {
+			System.out.println("Os dois pontos do eixo precisam ser diferentes.");
+			return;
+		}
+
+		Matriz4x4 rotacaoNoEixo = Matriz4x4.rotacaoEixo(eixoA, eixoB, angulo);
+		transformaUniverso(rotacaoNoEixo);
+	}
+
+	/** Desenha uma pequena cruz para indicar um ponto do eixo no buffer. */
+	private void desenhaMarcador(Ponto3D p, int r, int g, int b) {
+		int x = (int)p.X;
+		int y = (int)p.Y;
+		desenhaLinha(x - 4, y, x + 4, y, r, g, b);
+		desenhaLinha(x, y - 4, x, y + 4, r, g, b);
 	}
 
 	/**
